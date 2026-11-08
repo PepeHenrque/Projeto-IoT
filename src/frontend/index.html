@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#ffffff">
+  <title>CampusSmart | Monitoramento de energia</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="phone">
+    <header class="topbar">
+      <div class="brand-mark">ϟ</div>
+      <strong>CampusSmart</strong>
+      <span class="date" id="clock">04 nov · 09:42</span>
+    </header>
+
+    <section id="dashboard" class="page active">
+      <div class="greeting">
+        <h1>Bom dia 👋</h1>
+        <p>Monitoramento do campus em tempo real</p>
+      </div>
+      <div class="stats">
+        <article class="stat green"><b id="occupiedCount">4</b><span>Ocupadas</span></article>
+        <article class="stat"><b id="idleCount">4</b><span>Ociosas</span></article>
+        <article class="stat red"><b id="alertCount">7</b><span>Alertas</span></article>
+      </div>
+      <div class="section-heading"><h2>Alertas recentes</h2><button class="link" data-go="alerts">Ver todos</button></div>
+      <div id="recentAlerts" class="recent-list"></div>
+      <div class="section-heading"><h2>Salas</h2><button class="link" data-go="rooms">Ver todas</button></div>
+      <div id="dashboardRooms" class="room-list compact"></div>
+    </section>
+
+    <section id="rooms" class="page">
+      <h1>Salas</h1><p class="muted">8 ambientes monitorados</p>
+      <label class="search"><span>⌕</span><input id="searchRoom" type="search" placeholder="Buscar sala..."></label>
+      <div class="filters" id="filters">
+        <button class="filter selected" data-filter="Todas">Todas</button>
+        <button class="filter" data-filter="Ocupadas">Ocupadas</button>
+        <button class="filter" data-filter="Ociosas">Ociosas</button>
+        <button class="filter" data-filter="Alertas">Alertas</button>
+      </div>
+      <div id="allRooms" class="room-list"></div>
+    </section>
+
+    <section id="alerts" class="page">
+      <h1>Alertas</h1><p class="muted"><span id="alertsSubtitle">7 desperdícios identificados</span></p>
+      <div class="priority-stats">
+        <article><b class="high" id="highCount">3</b><span>Alta</span></article>
+        <article><b class="medium" id="mediumCount">2</b><span>Média</span></article>
+        <article><b class="low" id="lowCount">2</b><span>Baixa</span></article>
+      </div>
+      <div id="alertsList" class="alerts-list"></div>
+    </section>
+
+    <section id="flow" class="page">
+      <h1>Fluxo &amp; Arquitetura</h1><p class="muted">Estrutura e navegação do sistema</p>
+      <h2 class="subheading">Fluxo principal</h2>
+      <div class="flow-card">
+        <div class="flow-step"><i>1</i><div><b>Dashboard</b><small>Visão geral e alertas recentes</small></div><span>›</span></div>
+        <div class="flow-step"><i>2</i><div><b>Lista de Salas</b><small>Filtra e seleciona a sala</small></div><span>›</span></div>
+        <div class="flow-step"><i>3</i><div><b>Detalhes da Sala</b><small>Verifica status e equipamentos</small></div><span>›</span></div>
+        <div class="flow-step orange-step"><i>4</i><div><b>Identifica Desperdício</b><small>Equipamento ligado sem uso</small></div><span>›</span></div>
+        <div class="flow-step red-step"><i>5</i><div><b>Solicita Desligamento</b><small>Toca em “Desligar”</small></div><span>›</span></div>
+        <div class="flow-step"><i>6</i><div><b>Confirmação</b><small>Modal de confirmação</small></div><span>›</span></div>
+        <div class="flow-step green-step"><i>7</i><div><b>Sucesso</b><small>Equipamento desligado</small></div><span>✓</span></div>
+      </div>
+      <h2 class="subheading">Fluxo alternativo — Erro</h2>
+      <div class="flow-card error-flow">
+        <div class="flow-step"><i>1</i><div><b>Confirmação</b><small>Usuário confirma o desligamento</small></div></div>
+        <div class="flow-step"><i>2</i><div><b>Carregando</b><small>Aguarda resposta do dispositivo IoT</small></div></div>
+        <div class="flow-step"><i>3</i><div><b>Erro de comunicação</b><small>Dispositivo não respondeu</small></div></div>
+        <div class="flow-step"><i>4</i><div><b>Tentar novamente</b><small>Usuário inicia nova tentativa</small></div></div>
+      </div>
+      <h2 class="subheading">Arquitetura da informação</h2>
+      <div class="tree-card"><b>Dashboard</b><br>　├── Salas<br>　│　├── Detalhes da Sala<br>　│　│　├── Iluminação<br>　│　│　├── Climatização<br>　│　│　└── Equipamentos<br>　├── Alertas<br>　└── Ações de Desligamento<br>　　　└── Confirmação → Sucesso / Erro</div>
+      <div class="note"><b>Integração planejada</b><br>Interface HTML/CSS/JavaScript → API no Node-RED → sensores e atuadores simulados.</div>
+    </section>
+
+    <section id="detail" class="page">
+      <button class="back" id="backRooms">‹ &nbsp; Salas</button>
+      <div class="detail-title"><div><h1 id="detailName">Lab. Informática</h1><p id="detailMeta" class="muted">Sala 104 · 1º andar · Cap. 32 pessoas</p></div><span id="occupancyBadge" class="status-badge">Ociosa</span></div>
+      <p class="muted small" id="lastUse">Último uso há 2h 15min</p>
+      <div id="wasteNotice" class="waste-notice">⚠️ &nbsp; <div><b>Alertas de desperdício</b><p>Equipamentos ligados em uma sala sem ocupação</p></div></div>
+      <div id="mainDevices" class="device-cards"></div>
+      <h2 class="subheading">Equipamentos</h2>
+      <div id="equipmentList" class="equipment-list"></div>
+    </section>
+
+    <nav class="bottom-nav">
+      <button class="nav-item active" data-go="dashboard"><span>▦</span>Início</button>
+      <button class="nav-item" data-go="rooms"><span>⌂</span>Salas</button>
+      <button class="nav-item" data-go="alerts"><span class="alert-icon">△<em id="navAlertCount">7</em></span>Alertas</button>
+      <button class="nav-item" data-go="flow"><span>♧</span>Fluxo</button>
+    </nav>
+  </main>
+
+  <div class="modal-backdrop" id="confirmModal" aria-hidden="true">
+    <div class="modal">
+      <div class="modal-symbol">!</div>
+      <h2>Desligar equipamento?</h2>
+      <p>O comando será enviado ao dispositivo. Esta ação pode ser desfeita automaticamente.</p>
+      <div class="modal-actions"><button class="btn secondary" id="cancelAction">Cancelar</button><button class="btn danger" id="confirmAction">Desligar</button></div>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>
