@@ -33,6 +33,27 @@ def test_get_room_404():
     assert client.get("/api/v1/rooms/999").status_code == 404
 
 
+def test_energy_saving_analytics():
+    r = client.get("/api/v1/rooms/analytics/energy-saving")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total_rooms_monitored"] == 8
+    assert body["rooms_with_ac_on"] == 6
+    assert body["idle_rooms_with_ac_on"] == 2
+    assert body["estimated_kwh_saved_today"] > 0
+    assert "status_rule" in body
+
+
+def test_critical_alerts_summary():
+    r = client.get("/api/v1/alerts/critical/summary")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total_critical_alerts"] == 3
+    assert body["action_required"] is True
+    assert len(body["alerts"]) == 3
+    assert all(a["level"] == "high" for a in body["alerts"])
+
+
 def test_list_alerts_and_filter():
     assert len(client.get("/api/v1/alerts").json()) == 7
     high = client.get("/api/v1/alerts", params={"level": "high"}).json()

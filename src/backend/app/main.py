@@ -30,7 +30,11 @@ def on_connect(client, userdata, flags, rc, properties=None):
 def on_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode())
-        # Atualiza a telemetria recebida do ESP32 via MQTT no mock_db (se necessário)
+        sala_id_raw = payload.get("sala_id")
+        if sala_id_raw:
+            digits = "".join(filter(str.isdigit, str(sala_id_raw)))
+            if digits:
+                mock_db.update_room_telemetry(int(digits), occupied=payload.get("ocupado"))
     except Exception as e:
         print(f"Erro ao processar mensagem MQTT: {e}")
 
@@ -48,8 +52,11 @@ def startup_event():
 
 @app.on_event("shutdown")
 def shutdown_event():
-    mqtt_client.loop_stop()
-    mqtt_client.disconnect()
+    try:
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+    except Exception as e:
+        print(f"Erro ao desconectar MQTT: {e}")
 
 
 _origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
@@ -74,6 +81,34 @@ def list_rooms(
     return mock_db.list_rooms(occupied=occupied, has_alerts=has_alerts, q=q)
 
 
+# ------------------------------------------------------------------ estatísticas e regras de negócio
+@router.get(
+    "/rooms/analytics/energy-saving",
+    tags=["Salas"],
+    summary="Resumo de economia e desperdício de energia",
+)
+def energy_saving_analytics():
+    """
+    Retorna um resumo simulado do consumo de energia evitado 
+    pelo sistema de corte automático em salas ociosas.
+    """
+    salas = mock_db.list_rooms()
+    total_salas = len(salas)
+    
+    salas_com_ac_ligado = sum(1 for r in salas if getattr(r, "ac", False))
+    salas_ociosas_com_ac = sum(1 for r in salas if getattr(r, "ac", False) and not r.occupied)
+    
+    kwh_poupado_estimado = round(salas_com_ac_ligado * 2.5, 2)
+    
+    return {
+        "total_rooms_monitored": total_salas,
+        "rooms_with_ac_on": salas_com_ac_ligado,
+        "idle_rooms_with_ac_on": salas_ociosas_com_ac,
+        "estimated_kwh_saved_today": kwh_poupado_estimado,
+        "status_rule": "Ativa (Timeout ociosidade: 15 min)",
+    }
+
+
 @router.get(
     "/rooms/{room_id}",
     response_model=Room,
@@ -89,6 +124,25 @@ def get_room(room_id: int):
 
 
 # ----------------------------------------------------------------- alertas
+@router.get(
+    "/alerts/critical/summary",
+    tags=["Alertas"],
+    summary="Resumo de alertas críticos pendentes",
+)
+def critical_alerts_summary():
+    """
+    Filtra e retorna apenas os alertas de nível 'high' (críticos) 
+    que exigem ação imediata da equipe de facilities.
+    """
+    alertas_criticos = mock_db.list_alerts(level="high")
+    
+    return {
+        "total_critical_alerts": len(alertas_criticos),
+        "alerts": alertas_criticos,
+        "action_required": len(alertas_criticos) > 0,
+    }
+
+
 @router.get("/alerts", response_model=list[Alert], tags=["Alertas"], summary="Buscar alertas")
 def list_alerts(
     level: AlertLevel | None = Query(None, description="high | medium | low"),
@@ -126,8 +180,15 @@ def cut_ac(
         raise HTTPException(409, f"O ar-condicionado da sala {room_id} já está desligado.")
 
     # Dispara a ordem de desligamento via MQTT diretamente pro ESP32
-    comando_mqtt = json.dumps({"modo_led": "OFF", "mensagem_web": "CORTE REALIZADO"})
-    mqtt_client.publish(TOPICO_COMANDOS, comando_mqtt)
+    try:
+        comando_mqtt = json.dumps({
+            "modo_carga": "OFF",
+            "modo_led": "OFF",
+            "mensagem_web": "CORTE REALIZADO",
+        })
+        mqtt_client.publish(TOPICO_COMANDOS, comando_mqtt)
+    except Exception as e:
+        print(f"Aviso: Não foi possível publicar no MQTT: {e}")
 
     return CutCommandResponse(
         success=True,

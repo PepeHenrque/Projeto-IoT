@@ -130,6 +130,15 @@ def list_alerts(level: str | None = None, room_id: int | None = None) -> list[Al
     return items
 
 
+def update_room_telemetry(room_id: int, occupied: bool | None = None) -> None:
+    with _lock:
+        room = _rooms.get(room_id)
+        if room:
+            if occupied is not None:
+                room["occupied"] = bool(occupied)
+                room["last"] = "em uso" if occupied else "há pouco"
+
+
 # ---------- comando ----------
 def cut_ac(room_id: int) -> tuple[Room, str, int, datetime]:
 

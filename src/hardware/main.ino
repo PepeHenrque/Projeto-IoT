@@ -48,7 +48,8 @@ unsigned long ultimoEnvioMQTT = 0;
 // ============================================================================
 void callbackMQTT(char* topic, byte* payload, unsigned int length) {
   String mensagem = "";
-  for (int i = 0; i < length; i++) {
+  mensagem.reserve(length);
+  for (unsigned int i = 0; i < length; i++) {
     mensagem += (char)payload[i];
   }
   
@@ -58,7 +59,11 @@ void callbackMQTT(char* topic, byte* payload, unsigned int length) {
   if (!error) {
     if (doc.containsKey("modo_carga")) {
       modoCarga = doc["modo_carga"].as<String>();
+    } else if (doc.containsKey("modo_led")) {
+      modoCarga = doc["modo_led"].as<String>();
     }
+    modoCarga.toUpperCase();
+
     if (doc.containsKey("mensagem_web")) {
       mensagemWeb = doc["mensagem_web"].as<String>();
     }
@@ -66,10 +71,28 @@ void callbackMQTT(char* topic, byte* payload, unsigned int length) {
 }
 
 // ============================================================================
-// GARANTE A CONEXÃO CONTÍNUA COM O BROKER MQTT
+// GARANTE A CONEXÃO CONTÍNUA COM O BROKER MQTT E WI-FI
 // ============================================================================
 void reconectarMQTT() {
   while (!mqttClient.connected()) {
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.print(F("[Wi-Fi] Reconectando..."));
+      WiFi.begin(WIFI_SSID, WIFI_PASS);
+      int tentativas = 0;
+      while (WiFi.status() != WL_CONNECTED && tentativas < 20) {
+        delay(500);
+        Serial.print(".");
+        tentativas++;
+      }
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.println(F("\n[Wi-Fi] Reconectado!"));
+      } else {
+        Serial.println(F("\n[Wi-Fi] Falha ao reconectar. Tentando em 2 segundos..."));
+        delay(2000);
+        continue;
+      }
+    }
+
     Serial.print(F("Conectando ao Broker MQTT..."));
     String clientId = "ESP32-CampusSmart-" + String(random(0xffff), HEX);
     
@@ -191,17 +214,6 @@ void desenharTela(bool cargaAtiva) {
 
   if (mensagemWeb.length() > 0) {
     display.setCursor(8, 50);
-    
-    // ========================================================================
-    // RECURSO DE ÁUDIO NO OLED (COMENTADO LINHA POR LINHA)
-    // if (mensagemWeb == "AVISO DE VOZ!") {
-    //   display.print(F("🔊 FALANDO..."));
-    // } else {
-    //   display.print(F("WEB: "));
-    //   display.println(mensagemWeb.substring(0, 12));
-    // }
-    // ========================================================================
-
     display.print(F("WEB: "));
     display.println(mensagemWeb.substring(0, 12)); 
   }

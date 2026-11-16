@@ -1,4 +1,5 @@
 const API_BASE_URL = "http://127.0.0.1:8000/api/v1";
+
 let rooms = [
   {
     id: 101,
@@ -121,6 +122,7 @@ let rooms = [
     ],
   },
 ];
+
 let alerts = [
   {
     room: 102,
@@ -179,14 +181,25 @@ let alerts = [
     time: "há 20min",
   },
 ];
+
 let selectedRoom = rooms[3],
   pendingAction = null,
   currentFilter = "Todas";
+
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
+
 function roomCard(r) {
   return `<button class="room-card ${r.occupied ? "occupied" : ""} ${r.alerts ? "has-alert" : ""}" data-room="${r.id}"><span class="dot"></span><span class="room-copy"><b>${r.name}</b><small>${r.floor} &nbsp; 💡 ${r.lights ? "on" : "—"} &nbsp; ❄ ${r.ac ? "on" : "—"}</small></span><span class="room-side">${r.alerts ? `<span class="count">${r.alerts}</span>` : r.occupied ? "Ocupada" : "Ociosa"}</span><span class="chevron">›</span></button>`;
 }
+
+function adaptRoom(r) {
+  return {
+    ...r,
+    devices: r.devices.map((d) => [d.name, d.status, d.on]),
+  };
+}
+
 async function fetchRooms(filters = {}) {
   const qs = new URLSearchParams(filters).toString();
   const url = `${API_BASE_URL}/rooms${qs ? `?${qs}` : ""}`;
@@ -197,6 +210,30 @@ async function fetchRooms(filters = {}) {
   const data = await res.json();
   return data.map(adaptRoom);
 }
+
+async function fetchAlerts() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/alerts`, {
+      headers: { Accept: "application/json" },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      alerts = data.map((a) => ({
+        id: a.id,
+        room: a.room_id,
+        room_name: a.room_name,
+        equip: a.equip,
+        title: a.title,
+        priority: a.priority,
+        level: a.level,
+        time: a.time,
+      }));
+    }
+  } catch (err) {
+    console.warn("Backend offline: mantendo alertas locais simulados.", err);
+  }
+}
+
 function renderRooms() {
   const q = ($("#searchRoom")?.value || "").toLowerCase();
   const filtered = rooms.filter((r) => {
@@ -217,11 +254,12 @@ function renderRooms() {
     .map(roomCard)
     .join("");
 }
+
 function renderAlerts() {
   $("#alertsList").innerHTML = alerts
     .map(
       (a) =>
-        `<article class="alert-card ${a.level === "high" ? "high-border" : ""}"><div class="alert-top"><span class="priority ${a.level}">${a.priority.toUpperCase()}</span><span class="alert-time">${a.time}</span></div><h3>${a.title}</h3><p>${rooms.find((r) => r.id === a.room)?.name} · ${a.equip}</p><div class="alert-actions"><button class="btn" data-view="${a.room}">Ver sala</button><button class="btn primary" data-resolve="${a.room}">Resolver</button></div></article>`,
+        `<article class="alert-card ${a.level === "high" ? "high-border" : ""}"><div class="alert-top"><span class="priority ${a.level}">${a.priority.toUpperCase()}</span><span class="alert-time">${a.time}</span></div><h3>${a.title}</h3><p>${rooms.find((r) => r.id === a.room)?.name || a.room_name || `Sala ${a.room}`} · ${a.equip}</p><div class="alert-actions"><button class="btn" data-view="${a.room}">Ver sala</button><button class="btn primary" data-resolve="${a.room}">Resolver</button></div></article>`,
     )
     .join("");
   const counts = {
@@ -240,14 +278,16 @@ function renderAlerts() {
     .slice(0, 4)
     .map(
       (a) =>
-        `<div class="recent-item"><div class="recent-row"><span class="dot ${a.level === "medium" ? "medium" : ""}"></span><span class="recent-copy"><b>${rooms.find((r) => r.id === a.room)?.name}</b><small>${a.equip}</small></span><span class="priority ${a.level}">${a.priority.toUpperCase()}</span></div></div>`,
+        `<div class="recent-item"><div class="recent-row"><span class="dot ${a.level === "medium" ? "medium" : ""}"></span><span class="recent-copy"><b>${rooms.find((r) => r.id === a.room)?.name || a.room_name || `Sala ${a.room}`}</b><small>${a.equip}</small></span><span class="priority ${a.level}">${a.priority.toUpperCase()}</span></div></div>`,
     )
     .join("");
 }
+
 function updateStats() {
   $("#occupiedCount").textContent = rooms.filter((r) => r.occupied).length;
   $("#idleCount").textContent = rooms.filter((r) => !r.occupied).length;
 }
+
 function showPage(id) {
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === id));
   $$(".nav-item").forEach((n) =>
@@ -256,6 +296,7 @@ function showPage(id) {
   if (id === "rooms") renderRooms();
   if (id === "alerts") renderAlerts();
 }
+
 function openRoom(id) {
   selectedRoom = rooms.find((r) => r.id === Number(id));
   if (!selectedRoom) return;
@@ -285,15 +326,14 @@ function openRoom(id) {
     .join("");
   showPage("detail");
 }
-function adaptRoom(r) {
-  return { ...r, devices: r.devices.map(d => [d.name, d.status, d.on]) };
-}
+
 function toast(msg) {
   const t = $("#toast");
   t.textContent = msg;
   t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 2400);
 }
+
 function requestOff(device) {
   pendingAction = device;
   const item = selectedRoom.devices.find((x) => x[0] === device);
@@ -311,6 +351,7 @@ function requestOff(device) {
   $("#confirmModal").classList.add("show");
   $("#confirmModal").setAttribute("aria-hidden", "false");
 }
+
 document.addEventListener("click", (e) => {
   const nav = e.target.closest("[data-go]");
   if (nav) {
@@ -345,6 +386,7 @@ document.addEventListener("click", (e) => {
     renderRooms();
   }
 });
+
 $("#searchRoom").addEventListener("input", renderRooms);
 $("#backRooms").addEventListener("click", () => showPage("rooms"));
 $("#cancelAction").addEventListener("click", () => {
@@ -367,42 +409,73 @@ $("#confirmAction").addEventListener("click", async () => {
   description.textContent = "Enviando comando ao equipamento...";
 
   try {
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    let apiSuccess = false;
+    const isAc = pendingAction.toLowerCase().includes("ar-condicionado") ||
+                 pendingAction.toLowerCase().includes("climatiza");
 
-    const simularErro = false;
-    if (simularErro) throw new Error("Falha no comando");
+    // Integração com API REST: executa corte de ar-condicionado na API quando solicitado desligamento
+    if (!turnOn && isAc) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/rooms/${selectedRoom.id}/ac/cut`, {
+          method: "POST",
+          headers: { Accept: "application/json" },
+        });
 
-    if (d) {
-      d[2] = turnOn;
-      d[1] = turnOn ? "Ligado" : "Desligado";
+        if (response.ok) {
+          const result = await response.json();
+          if (result && result.room) {
+            const updatedRoom = adaptRoom(result.room);
+            const idx = rooms.findIndex((r) => r.id === selectedRoom.id);
+            if (idx !== -1) rooms[idx] = updatedRoom;
+            selectedRoom = updatedRoom;
+            apiSuccess = true;
+          }
+        }
+      } catch (apiErr) {
+        console.warn("API de corte offline; aplicando comando localmente.", apiErr);
+      }
     }
 
-    if (!turnOn) {
-      const removed = alerts.filter(
-        (a) => a.room === selectedRoom.id && a.equip === pendingAction,
-      ).length;
+    if (!apiSuccess) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
+      if (d) {
+        d[2] = turnOn;
+        d[1] = turnOn ? "Ligado" : "Desligado";
+      }
+
+      if (!turnOn) {
+        const removed = alerts.filter(
+          (a) => a.room === selectedRoom.id && a.equip === pendingAction,
+        ).length;
+
+        alerts = alerts.filter(
+          (a) => !(a.room === selectedRoom.id && a.equip === pendingAction),
+        );
+
+        selectedRoom.alerts = Math.max(0, selectedRoom.alerts - removed);
+      } else if (
+        !selectedRoom.occupied &&
+        !alerts.some(
+          (a) => a.room === selectedRoom.id && a.equip === pendingAction,
+        )
+      ) {
+        alerts.unshift({
+          room: selectedRoom.id,
+          equip: pendingAction,
+          title: "Equipamento ligado em sala ociosa",
+          priority: "Média",
+          level: "medium",
+          time: "agora",
+        });
+
+        selectedRoom.alerts++;
+      }
+    } else {
+      // Se a API processou o corte, remove os alertas daquele equipamento na sala
       alerts = alerts.filter(
         (a) => !(a.room === selectedRoom.id && a.equip === pendingAction),
       );
-
-      selectedRoom.alerts = Math.max(0, selectedRoom.alerts - removed);
-    } else if (
-      !selectedRoom.occupied &&
-      !alerts.some(
-        (a) => a.room === selectedRoom.id && a.equip === pendingAction,
-      )
-    ) {
-      alerts.unshift({
-        room: selectedRoom.id,
-        equip: pendingAction,
-        title: "Equipamento ligado em sala ociosa",
-        priority: "Média",
-        level: "medium",
-        time: "agora",
-      });
-
-      selectedRoom.alerts++;
     }
 
     $("#confirmModal").classList.remove("show");
@@ -437,19 +510,20 @@ $("#clock").textContent = new Intl.DateTimeFormat("pt-BR", {
 })
   .format(new Date())
   .replace(",", " ·");
+
 async function loadRooms() {
   try {
     rooms = await fetchRooms();
-    selectedRoom = rooms.find(r => r.id === 104) ?? rooms[0];
+    selectedRoom = rooms.find((r) => r.id === 104) ?? rooms[0];
   } catch (err) {
-    console.error(err);
-    toast("Não foi possível carregar as salas.");
+    console.warn("Backend offline: utilizando dados simulados locais.", err);
   }
+  await fetchAlerts();
   renderRooms();
+  renderAlerts();
   updateStats();
 }
+
 (async () => {
   await loadRooms();
-  renderAlerts(); // alertas ainda locais; depois use GET /api/v1/alerts
 })();
-// Integração futura: substituir a simulação local por chamadas fetch à API HTTP do Node-RED.

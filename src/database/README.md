@@ -1,98 +1,68 @@
-**Banco de dados para MySQL Workbench**
+# Banco de Dados — MySQL Workbench
 
+Guia de configuração e execução do banco de dados `sistema_iot` para o CampusSmart.
 
+## Pré-requisitos
+- Ter o **MySQL Server** e o **MySQL Workbench** instalados (versão 8.0+ recomendada).
 
+---
 
+## Como executar o script no MySQL Workbench
 
-É necessário ter instalado o MySQL Workbench
+1. **Abra o MySQL Workbench** e conecte-se à sua instância local (geralmente chamada de **Local instance 3306**).
+2. **Abra uma nova aba de consulta (Query Tab)** clicando no ícone com o sinal de `+` no canto superior esquerdo ou pressionando `Ctrl + T`.
+3. **Cole o script SQL completo** ou execute o arquivo `BancoProjetoIot.sql`:
 
+```sql
+-- Cria o banco de dados e define como o banco atual
+CREATE DATABASE IF NOT EXISTS sistema_iot;
+USE sistema_iot;
 
+-- Remoção segura para recriação
+DROP TABLE IF EXISTS telemetrias;
+DROP TABLE IF EXISTS avisos_oled;
+DROP TABLE IF EXISTS salas;
 
-Para criar essas tabelas no MySQL Workbench, você precisa executar o script dentro de um banco de dados (schema).
-
-
-
-**1** - Abra o MySQL Workbench e clique na sua conexão local (geralmente chamada de **Local instance 3306**). Digite sua senha, se solicitar.
-
-
-
-**2** - Abra uma nova aba de query clicando no ícone de pergaminho com um "+" no canto superior esquerdo (ou pressionando **Ctrl + T**).
-
-
-
-**3** - Cole o script completo, incluindo a criação do banco de dados para organizar o projeto:
-
-
-
-
-
-
-
-\-- Cria o banco de dados e define como o banco atual
-
-CREATE DATABASE IF NOT EXISTS sistema\_iot;
-
-USE sistema\_iot;
-
-
-
-\-- Cria a tabela de salas
-
+-- Cria a tabela de salas
 CREATE TABLE salas (
-
-&#x20;   id INT AUTO\_INCREMENT PRIMARY KEY,
-
-&#x20;   nome VARCHAR(100) NOT NULL,
-
-&#x20;   modo\_operacao ENUM('AUTO', 'ON', 'OFF') DEFAULT 'AUTO',
-
-&#x20;   status\_ocupado BOOLEAN DEFAULT FALSE
-
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    modo_operacao ENUM('AUTO', 'ON', 'OFF') DEFAULT 'AUTO',
+    status_ocupado BOOLEAN DEFAULT FALSE
 );
 
-
-
-\-- Cria a tabela de avisos
-
-CREATE TABLE avisos\_oled (
-
-&#x20;   id INT AUTO\_INCREMENT PRIMARY KEY,
-
-&#x20;   sala\_id INT NOT NULL,
-
-&#x20;   mensagem VARCHAR(255) NOT NULL,
-
-&#x20;   timestamp TIMESTAMP DEFAULT CURRENT\_TIMESTAMP,
-
-&#x20;   FOREIGN KEY (sala\_id) REFERENCES salas(id) ON DELETE CASCADE
-
+-- Cria a tabela de avisos exibidos no display OLED
+CREATE TABLE avisos_oled (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    sala_id INT NOT NULL,
+    mensagem VARCHAR(255) NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (sala_id) REFERENCES salas(id) ON DELETE CASCADE
 );
 
-
-
-\-- Cria a tabela de telemetria
-
+-- Cria a tabela de telemetrias enviadas pelo ESP32
 CREATE TABLE telemetrias (
-
-&#x20;   id INT AUTO\_INCREMENT PRIMARY KEY,
-
-&#x20;   sala\_id INT NOT NULL,
-
-&#x20;   ocupado BOOLEAN NOT NULL,
-
-&#x20;   potencia\_w FLOAT NOT NULL,
-
-&#x20;   corrente\_ma INT NOT NULL,
-
-&#x20;   timestamp TIMESTAMP DEFAULT CURRENT\_TIMESTAMP,
-
-&#x20;   FOREIGN KEY (sala\_id) REFERENCES salas(id) ON DELETE CASCADE
-
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    sala_id INT NOT NULL,
+    ocupado BOOLEAN NOT NULL,
+    potencia_w FLOAT NOT NULL,
+    corrente_ma INT NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (sala_id) REFERENCES salas(id) ON DELETE CASCADE
 );
 
-**4** - Execute o script clicando no ícone de raio amarelo (o primeiro, sem a lupa) na barra de ferramentas da query, ou pressione **Ctrl + Shift + Enter**.
+-- Carga inicial de salas
+INSERT INTO salas (id, nome, modo_operacao, status_ocupado) VALUES
+(101, 'Sala 101', 'AUTO', 1),
+(102, 'Sala 102', 'AUTO', 0),
+(103, 'Sala 103', 'AUTO', 1),
+(104, 'Lab. Informática', 'AUTO', 0),
+(105, 'Auditório', 'AUTO', 0),
+(201, 'Sala 201', 'AUTO', 1),
+(202, 'Sala 202', 'AUTO', 0),
+(203, 'Biblioteca', 'AUTO', 1)
+ON DUPLICATE KEY UPDATE nome = VALUES(nome);
+```
 
-
-
-**5** - Verifique as tabelas olhando no painel lateral esquerdo chamado "SCHEMAS". Clique no ícone de atualizar (duas setas em círculo). Expanda o banco **sistema\_iot** e a pasta Tables para ver **salas**, **avisos\_oled** e **telemetrias** criadas.
-
+4. **Execute o script** clicando no ícone do raio (`Execute`) na barra de ferramentas ou pressionando `Ctrl + Shift + Enter`.
+5. **Verifique as tabelas criadas**: No painel lateral esquerdo (**SCHEMAS**), clique no botão de atualizar (duas setas circulares). Expanda o schema `sistema_iot` e a pasta **Tables** para visualizar as tabelas `salas`, `avisos_oled` e `telemetrias`.
