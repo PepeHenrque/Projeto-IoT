@@ -51,5 +51,23 @@ class CutCommandResponse(BaseModel):
     room: Room = Field(description="Estado atualizado da sala")
 
 
+class TelemetriaResponse(BaseModel):
+    id: int
+    sala_id: int
+    ocupado: bool
+    potencia_w: float
+    corrente_ma: int
+    timestamp: datetime
+    model_config = {"from_attributes": True}
+
+
+class AvisoOledResponse(BaseModel):
+    id: int
+    sala_id: int
+    mensagem: str
+    timestamp: datetime
+    model_config = {"from_attributes": True}
+
+
 class ErrorResponse(BaseModel):
     detail: str

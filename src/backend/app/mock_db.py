@@ -1,12 +1,14 @@
-"""Repositório em memória (dados simulados).
+"""Camada de repositório e serviços de dados do CampusSmart.
 
-Espelha os dados que hoje estão hardcoded no app.js. Nas próximas etapas
-este módulo pode ser trocado por banco de dados sem mexer nas rotas (main.py).
+Integra a modelagem relacional do banco de dados (tabelas: salas, telemetrias, avisos_oled)
+com cache em memória e regras de negócio para as rotas da API (main.py).
 """
 import copy
 import threading
 from datetime import datetime, timezone
 
+from . import database
+from .database import AvisoOledDB, SalaDB, SessionLocal, TelemetriaDB
 from .schemas import Alert, Device, Room
 
 
@@ -23,7 +25,7 @@ class AcAlreadyOff(Exception):
     pass
 
 
-# ---------- dados iniciais ----------
+# ---------- dados iniciais em memória ----------
 def _d(name: str, status: str, on: bool) -> dict:
     return {"name": name, "status": status, "on": on}
 
@@ -98,7 +100,7 @@ def _to_room(room: dict) -> Room:
     )
 
 
-# ---------- consultas ----------
+# ---------- consultas de salas e alertas ----------
 def list_rooms(occupied: bool | None = None, has_alerts: bool | None = None, q: str | None = None) -> list[Room]:
     with _lock:
         result = [_to_room(r) for r in _rooms.values()]
@@ -130,18 +132,122 @@ def list_alerts(level: str | None = None, room_id: int | None = None) -> list[Al
     return items
 
 
-def update_room_telemetry(room_id: int, occupied: bool | None = None) -> None:
+# ---------- integração com banco de dados: telemetria e avisos ----------
+def update_room_telemetry(
+    room_id: int,
+    occupied: bool | None = None,
+    potencia_w: float = 0.0,
+    corrente_ma: int = 0,
+) -> None:
     with _lock:
         room = _rooms.get(room_id)
-        if room:
+        if room and occupied is not None:
+            room["occupied"] = bool(occupied)
+            room["last"] = "em uso" if occupied else "há pouco"
+
+    # Persistência nas tabelas relacionais salas e telemetrias
+    session = SessionLocal()
+    try:
+        sala_db = session.query(SalaDB).filter(SalaDB.id == room_id).first()
+        if sala_db:
             if occupied is not None:
-                room["occupied"] = bool(occupied)
-                room["last"] = "em uso" if occupied else "há pouco"
+                sala_db.status_ocupado = bool(occupied)
+        else:
+            sala_db = SalaDB(
+                id=room_id,
+                nome=f"Sala {room_id}",
+                modo_operacao="AUTO",
+                status_ocupado=bool(occupied) if occupied is not None else False,
+            )
+            session.add(sala_db)
+
+        nova_telemetria = TelemetriaDB(
+            sala_id=room_id,
+            ocupado=bool(occupied) if occupied is not None else False,
+            potencia_w=float(potencia_w),
+            corrente_ma=int(corrente_ma),
+            timestamp=datetime.utcnow(),
+        )
+        session.add(nova_telemetria)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"[DB] Erro ao persistir telemetria: {e}")
+    finally:
+        session.close()
 
 
-# ---------- comando ----------
+def record_aviso_oled(room_id: int, mensagem: str) -> None:
+    session = SessionLocal()
+    try:
+        sala_db = session.query(SalaDB).filter(SalaDB.id == room_id).first()
+        if sala_db:
+            if "CORTE" in mensagem.upper() or "DESLIG" in mensagem.upper():
+                sala_db.modo_operacao = "OFF"
+        aviso = AvisoOledDB(
+            sala_id=room_id,
+            mensagem=mensagem,
+            timestamp=datetime.utcnow(),
+        )
+        session.add(aviso)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"[DB] Erro ao persistir aviso OLED: {e}")
+    finally:
+        session.close()
+
+
+def list_telemetrias(sala_id: int | None = None, limit: int = 50) -> list[dict]:
+    session = SessionLocal()
+    try:
+        q = session.query(TelemetriaDB)
+        if sala_id is not None:
+            q = q.filter(TelemetriaDB.sala_id == sala_id)
+        items = q.order_by(TelemetriaDB.id.desc()).limit(limit).all()
+        return [
+            {
+                "id": t.id,
+                "sala_id": t.sala_id,
+                "ocupado": t.ocupado,
+                "potencia_w": t.potencia_w,
+                "corrente_ma": t.corrente_ma,
+                "timestamp": t.timestamp,
+            }
+            for t in items
+        ]
+    except Exception as e:
+        print(f"[DB] Erro ao consultar telemetrias: {e}")
+        return []
+    finally:
+        session.close()
+
+
+def list_avisos_oled(sala_id: int | None = None, limit: int = 50) -> list[dict]:
+    session = SessionLocal()
+    try:
+        q = session.query(AvisoOledDB)
+        if sala_id is not None:
+            q = q.filter(AvisoOledDB.sala_id == sala_id)
+        items = q.order_by(AvisoOledDB.id.desc()).limit(limit).all()
+        return [
+            {
+                "id": a.id,
+                "sala_id": a.sala_id,
+                "mensagem": a.mensagem,
+                "timestamp": a.timestamp,
+            }
+            for a in items
+        ]
+    except Exception as e:
+        print(f"[DB] Erro ao consultar avisos OLED: {e}")
+        return []
+    finally:
+        session.close()
+
+
+# ---------- comando de corte ----------
 def cut_ac(room_id: int) -> tuple[Room, str, int, datetime]:
-
     with _lock:
         room = _rooms.get(room_id)
         if room is None:
@@ -159,4 +265,7 @@ def cut_ac(room_id: int) -> tuple[Room, str, int, datetime]:
         _alerts[:] = [a for a in _alerts if not (a["room_id"] == room_id and a["equip"] == ac["name"])]
         resolved = before - len(_alerts)
 
-        return _to_room(room), ac["name"], resolved, datetime.now(timezone.utc)
+    # Grava o comando na tabela avisos_oled e atualiza a tabela salas no banco
+    record_aviso_oled(room_id, f"CORTE: {ac['name']} desligado")
+
+    return _to_room(room), ac["name"], resolved, datetime.now(timezone.utc)

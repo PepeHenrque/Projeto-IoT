@@ -7,6 +7,8 @@ __pycache__/
 *.pyc
 venv/
 .venv/
+*.db
+*.sqlite3
 
 # VS Code & IDEs
 .vscode/

@@ -6,15 +6,23 @@ import paho.mqtt.client as mqtt
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import mock_db
-from .schemas import Alert, AlertLevel, CutCommandResponse, ErrorResponse, Room
+from . import database, mock_db
+from .schemas import (
+    Alert,
+    AlertLevel,
+    AvisoOledResponse,
+    CutCommandResponse,
+    ErrorResponse,
+    Room,
+    TelemetriaResponse,
+)
 
 API_PREFIX = "/api/v1"
 
 app = FastAPI(
     title="CampusSmart API",
-    description="API REST para monitoramento e automação de ar-condicionado do campus.",
-    version="0.1.0",
+    description="API REST para monitoramento e automação de ar-condicionado do campus integrado com MySQL e MQTT.",
+    version="0.2.0",
 )
 
 # ----------------------------------------------------------------- MQTT Client
@@ -23,9 +31,11 @@ MQTT_PORT = 1883
 TOPICO_TELEMETRIA = "campussmart/sala101/telemetria"
 TOPICO_COMANDOS = "campussmart/sala101/comandos"
 
+
 def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
         client.subscribe(TOPICO_TELEMETRIA)
+
 
 def on_message(client, userdata, msg):
     try:
@@ -34,21 +44,36 @@ def on_message(client, userdata, msg):
         if sala_id_raw:
             digits = "".join(filter(str.isdigit, str(sala_id_raw)))
             if digits:
-                mock_db.update_room_telemetry(int(digits), occupied=payload.get("ocupado"))
+                mock_db.update_room_telemetry(
+                    room_id=int(digits),
+                    occupied=payload.get("ocupado"),
+                    potencia_w=float(payload.get("potencia_w", 0.0)),
+                    corrente_ma=int(payload.get("corrente_ma", 0)),
+                )
     except Exception as e:
         print(f"Erro ao processar mensagem MQTT: {e}")
+
 
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqtt_client.on_connect = on_connect
 mqtt_client.on_message = on_message
 
+
 @app.on_event("startup")
 def startup_event():
+    # 1. Inicializa o banco de dados relacional (tabelas e seeds)
+    try:
+        database.init_db()
+    except Exception as e:
+        print(f"[DB] Erro na inicialização do banco de dados: {e}")
+
+    # 2. Conecta ao broker MQTT
     try:
         mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
         mqtt_client.loop_start()
     except Exception as e:
         print(f"Erro ao conectar ao Broker MQTT: {e}")
+
 
 @app.on_event("shutdown")
 def shutdown_event():
@@ -94,12 +119,12 @@ def energy_saving_analytics():
     """
     salas = mock_db.list_rooms()
     total_salas = len(salas)
-    
+
     salas_com_ac_ligado = sum(1 for r in salas if getattr(r, "ac", False))
     salas_ociosas_com_ac = sum(1 for r in salas if getattr(r, "ac", False) and not r.occupied)
-    
+
     kwh_poupado_estimado = round(salas_com_ac_ligado * 2.5, 2)
-    
+
     return {
         "total_rooms_monitored": total_salas,
         "rooms_with_ac_on": salas_com_ac_ligado,
@@ -135,7 +160,7 @@ def critical_alerts_summary():
     que exigem ação imediata da equipe de facilities.
     """
     alertas_criticos = mock_db.list_alerts(level="high")
-    
+
     return {
         "total_critical_alerts": len(alertas_criticos),
         "alerts": alertas_criticos,
@@ -199,6 +224,46 @@ def cut_ac(
         resolved_alerts=resolved,
         room=room,
     )
+
+
+# ------------------------------------------------------- banco de dados (MySQL)
+@router.get(
+    "/database/telemetrias",
+    response_model=list[TelemetriaResponse],
+    tags=["Banco de Dados"],
+    summary="Consultar histórico de telemetria gravado no banco",
+)
+def get_telemetrias(
+    sala_id: int | None = Query(None, description="Filtrar por id da sala"),
+    limit: int = Query(50, ge=1, le=200, description="Quantidade máxima de registros"),
+):
+    return mock_db.list_telemetrias(sala_id=sala_id, limit=limit)
+
+
+@router.get(
+    "/database/avisos-oled",
+    response_model=list[AvisoOledResponse],
+    tags=["Banco de Dados"],
+    summary="Consultar histórico de avisos gravados no banco para a tela OLED",
+)
+def get_avisos_oled(
+    sala_id: int | None = Query(None, description="Filtrar por id da sala"),
+    limit: int = Query(50, ge=1, le=200, description="Quantidade máxima de registros"),
+):
+    return mock_db.list_avisos_oled(sala_id=sala_id, limit=limit)
+
+
+@router.get(
+    "/database/status",
+    tags=["Banco de Dados"],
+    summary="Status da conexão com o banco de dados",
+)
+def database_status():
+    return {
+        "status": "connected",
+        "dialect": database.DB_DIALECT,
+        "database": os.getenv("MYSQL_DATABASE", "sistema_iot"),
+    }
 
 
 app.include_router(router)

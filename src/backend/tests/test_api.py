@@ -82,3 +82,26 @@ def test_cut_ac_not_found():
 def test_cut_ac_simulated_error():
     assert client.post("/api/v1/rooms/102/ac/cut", params={"simulate_error": True}).status_code == 503
     assert client.get("/api/v1/rooms/102").json()["ac"] is True
+
+
+def test_database_integration_routes():
+    # Testa rota de status da conexão
+    status_res = client.get("/api/v1/database/status")
+    assert status_res.status_code == 200
+    status_data = status_res.json()
+    assert status_data["status"] == "connected"
+    assert "dialect" in status_data
+
+    # Simula gravação de telemetria
+    mock_db.update_room_telemetry(room_id=101, occupied=True, potencia_w=1.5, corrente_ma=300)
+    telemetrias = client.get("/api/v1/database/telemetrias", params={"sala_id": 101}).json()
+    assert len(telemetrias) >= 1
+    assert telemetrias[0]["sala_id"] == 101
+    assert telemetrias[0]["ocupado"] is True
+
+    # Realiza um corte de ar-condicionado e verifica registro na tabela avisos_oled
+    client.post("/api/v1/rooms/105/ac/cut")
+    avisos = client.get("/api/v1/database/avisos-oled", params={"sala_id": 105}).json()
+    assert len(avisos) >= 1
+    assert avisos[0]["sala_id"] == 105
+    assert "CORTE" in avisos[0]["mensagem"].upper()
