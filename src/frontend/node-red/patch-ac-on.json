@@ -1,0 +1,47 @@
+[
+  {
+    "id": "patch_in",
+    "type": "http in",
+    "name": "POST ac/on",
+    "url": "/api/v1/rooms/:room_id/ac/on",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 100,
+    "wires": [
+      [
+        "patch_fn"
+      ]
+    ]
+  },
+  {
+    "id": "patch_fn",
+    "type": "function",
+    "name": "Lógica POST ac/on (com CORS)",
+    "func": "// PATCH: liga o ar-condicionado. Espelha a lógica do POST ac/cut (que desliga).\n// ADAPTE aqui para o seu atuador real (MQTT, serial, GPIO...). Mantenha as respostas e os cabeçalhos CORS.\nconst lista=String(env.get('CORS_ORIGINS')||'http://127.0.0.1:5500,http://localhost:5500').split(',').map(x=>x.trim()).filter(Boolean);\nconst origem=(msg.req&&msg.req.headers&&msg.req.headers.origin)||'';\nconst h={'Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type, Accept','Access-Control-Max-Age':'600','Vary':'Origin'};\nif(lista.includes('*')) h['Access-Control-Allow-Origin']='*'; else if(origem&&lista.includes(origem)) h['Access-Control-Allow-Origin']=origem;\nmsg.headers=h;\nconst DEF={ocupada:false,ac:true,modo:'AUTO',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst s=global.get('campus')||DEF;\nif(String(msg.req.params.room_id)!=='101'){msg.statusCode=404;msg.payload={erro:'sala não encontrada'};return msg;}\nif(!s.online){msg.statusCode=503;msg.payload={erro:'dispositivo offline'};return msg;}\ns.ac=true; global.set('campus',s);\nmsg.statusCode=200; msg.payload={ok:true,room_id:101,ac:'ligado'}; return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 100,
+    "wires": [
+      [
+        "patch_resp"
+      ]
+    ]
+  },
+  {
+    "id": "patch_resp",
+    "type": "http response",
+    "name": "",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 100,
+    "wires": []
+  }
+]

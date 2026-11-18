@@ -102,14 +102,7 @@ def init_db():
         count = session.query(SalaDB).count()
         if count == 0:
             initial_salas = [
-                SalaDB(id=101, nome="Sala 101", modo_operacao="AUTO", status_ocupado=True),
-                SalaDB(id=102, nome="Sala 102", modo_operacao="AUTO", status_ocupado=False),
-                SalaDB(id=103, nome="Sala 103", modo_operacao="AUTO", status_ocupado=True),
-                SalaDB(id=104, nome="Lab. Informática", modo_operacao="AUTO", status_ocupado=False),
-                SalaDB(id=105, nome="Auditório", modo_operacao="AUTO", status_ocupado=False),
-                SalaDB(id=201, nome="Sala 201", modo_operacao="AUTO", status_ocupado=True),
-                SalaDB(id=202, nome="Sala 202", modo_operacao="AUTO", status_ocupado=False),
-                SalaDB(id=203, nome="Biblioteca", modo_operacao="AUTO", status_ocupado=True),
+                SalaDB(id=101, nome="Sala 101", modo_operacao="AUTO", status_ocupado=False),  # única sala monitorada (ESP32)
             ]
             session.add_all(initial_salas)
             session.commit()

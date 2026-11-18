@@ -63,14 +63,7 @@ CREATE TABLE `telemetrias` (
 -- Carga Inicial (Seeds) para Salas Monitoradas
 -- ----------------------------------------------------------------------------
 INSERT INTO `salas` (`id`, `nome`, `modo_operacao`, `status_ocupado`) VALUES
-  (101, 'Sala 101', 'AUTO', 1),
-  (102, 'Sala 102', 'AUTO', 0),
-  (103, 'Sala 103', 'AUTO', 1),
-  (104, 'Lab. Informática', 'AUTO', 0),
-  (105, 'Auditório', 'AUTO', 0),
-  (201, 'Sala 201', 'AUTO', 1),
-  (202, 'Sala 202', 'AUTO', 0),
-  (203, 'Biblioteca', 'AUTO', 1)
+  (101, 'Sala 101', 'AUTO', 0)
 ON DUPLICATE KEY UPDATE `nome` = VALUES(`nome`), `modo_operacao` = VALUES(`modo_operacao`);
 
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;

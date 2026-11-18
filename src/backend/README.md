@@ -45,12 +45,19 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
+- **Interface (front-end) servida pelo próprio back-end:** http://127.0.0.1:8000/ (no celular, na mesma rede: `http://IP-DO-COMPUTADOR:8000/`)
 - Swagger (documentação interativa): http://127.0.0.1:8000/docs
+- Diagnóstico do ESP32 e do MQTT: http://127.0.0.1:8000/api/v1/device/status
 - Health check: http://127.0.0.1:8000/health
 
 ## Endpoints (`/api/v1`)
 | Método | Rota | Descrição |
 |---|---|---|
+| GET | `/telemetria` | Última leitura do ESP32 da Sala 101 (503 se o ESP32 parou de enviar há 15 s) |
+| POST | `/comando-carga` | `comando=ON\|OFF\|AUTO` (formulário ou JSON) → publica no MQTT |
+| POST | `/mensagem` | `mensagem=texto` (até 64 caracteres) → display OLED via MQTT e tabela `avisos_oled` |
+| POST | `/rooms/{room_id}/ac/on` | Liga o ar-condicionado (na Sala 101 publica no MQTT) |
+| GET | `/device/status` | Diagnóstico: ESP32 online? MQTT conectado? tópicos e último comando |
 | GET | `/rooms` | Listar salas (filtros: `occupied`, `has_alerts`, `q`) |
 | GET | `/rooms/{room_id}` | Detalhes de uma sala |
 | GET | `/rooms/analytics/energy-saving` | Estatísticas de economia e desperdício de energia |
@@ -60,6 +67,16 @@ uvicorn app.main:app --reload --port 8000
 | GET | `/database/telemetrias` | Consulta histórico de telemetria recebido do ESP32 e gravado no banco |
 | GET | `/database/avisos-oled` | Consulta histórico de avisos enviados ao display OLED |
 | GET | `/database/status` | Exibe o status e o dialeto atual da conexão do banco (`mysql` ou `sqlite`) |
+
+## MQTT (ligação com o ESP32)
+| Tópico | Quem publica | Conteúdo |
+|---|---|---|
+| `campussmart/cs7f3a/sala101/telemetria` | ESP32 (a cada 2 s) | `{"ocupado", "modo", "ac_ligado", "carga_ligada", "potencia_w", "corrente_ma"}` |
+| `campussmart/cs7f3a/sala101/comandos` | back-end (retain) | `{"modo_carga": "AUTO\|ON\|OFF", "ac": "ON\|OFF", "mensagem_web": "..."}` |
+| `campussmart/cs7f3a/sala101/status` | ESP32 (Last Will) | `online` / `offline` |
+
+Variáveis de ambiente: `MQTT_BROKER` (padrão `broker.hivemq.com`), `MQTT_PORT` (1883), `MQTT_TOPIC_BASE`, `CAMPUS_DISABLE_MQTT=1` (desliga o MQTT).
+Sem a placa? Rode o simulador: `python ../hardware/simulador_esp32.py` (mesma lógica e tópicos do firmware).
 
 ## Testes
 ```bash

@@ -1,0 +1,498 @@
+[
+  {
+    "id": "tab1",
+    "type": "tab",
+    "label": "CampusSmart API",
+    "disabled": false,
+    "info": "Endpoints da Sala 101 com sensores e atuadores simulados."
+  },
+  {
+    "id": "in1",
+    "type": "http in",
+    "z": "tab1",
+    "name": "GET telemetria",
+    "url": "/api/v1/telemetria",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 40,
+    "wires": [
+      [
+        "fn1"
+      ]
+    ]
+  },
+  {
+    "id": "fn1",
+    "type": "function",
+    "z": "tab1",
+    "name": "Lógica GET telemetria",
+    "func": "const H={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Accept','Access-Control-Allow-Methods':'GET,POST,OPTIONS'};\nmsg.headers=H;\nconst s=global.get('campus')||{ocupada:false,ac:true,modo:'AUTO',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst offline=()=>{msg.statusCode=503;msg.payload={erro:'dispositivo offline'};return msg;};\nif(!s.online) return offline();\nconst now=Date.now(), dt=(now-(s.ts||now))/3600000;\nconst base=200+(s.ac?1100:0)+(s.modo==='OFF'?0:150);\ns.potencia=Math.round(base+(Math.random()-0.5)*80);\ns.energia=+(s.energia+s.potencia/1000*dt).toFixed(3);\ns.ts=now; global.set('campus',s);\nmsg.statusCode=200;\nmsg.payload={sala:101,timestamp:new Date(now).toISOString(),ocupada:s.ocupada,\n temperatura:+(s.ac?23+Math.random():27+Math.random()).toFixed(1),umidade:Math.round(55+Math.random()*4),\n potencia_w:s.potencia,energia_kwh:s.energia,ac:{ligado:s.ac},carga:{modo:s.modo}};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 40,
+    "wires": [
+      [
+        "out1"
+      ]
+    ]
+  },
+  {
+    "id": "out1",
+    "type": "http response",
+    "z": "tab1",
+    "name": "",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "in2",
+    "type": "http in",
+    "z": "tab1",
+    "name": "POST ac/cut",
+    "url": "/api/v1/rooms/:room_id/ac/cut",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 100,
+    "wires": [
+      [
+        "fn2"
+      ]
+    ]
+  },
+  {
+    "id": "fn2",
+    "type": "function",
+    "z": "tab1",
+    "name": "Lógica POST ac/cut",
+    "func": "const H={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Accept','Access-Control-Allow-Methods':'GET,POST,OPTIONS'};\nmsg.headers=H;\nconst s=global.get('campus')||{ocupada:false,ac:true,modo:'AUTO',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst offline=()=>{msg.statusCode=503;msg.payload={erro:'dispositivo offline'};return msg;};\nif(String(msg.req.params.room_id)!=='101'){msg.statusCode=404;msg.payload={erro:'sala não encontrada'};return msg;}\nif(!s.online) return offline();\ns.ac=false; global.set('campus',s);\nmsg.statusCode=200; msg.payload={ok:true,room_id:101,ac:'cortado'}; return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 100,
+    "wires": [
+      [
+        "out2"
+      ]
+    ]
+  },
+  {
+    "id": "out2",
+    "type": "http response",
+    "z": "tab1",
+    "name": "",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "in3",
+    "type": "http in",
+    "z": "tab1",
+    "name": "POST comando-carga",
+    "url": "/api/v1/comando-carga",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 160,
+    "wires": [
+      [
+        "fn3"
+      ]
+    ]
+  },
+  {
+    "id": "fn3",
+    "type": "function",
+    "z": "tab1",
+    "name": "Lógica POST comando-carga",
+    "func": "const H={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Accept','Access-Control-Allow-Methods':'GET,POST,OPTIONS'};\nmsg.headers=H;\nconst s=global.get('campus')||{ocupada:false,ac:true,modo:'AUTO',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst offline=()=>{msg.statusCode=503;msg.payload={erro:'dispositivo offline'};return msg;};\nconst cmd=String((msg.payload||{}).comando||'').toUpperCase();\nif(!['ON','OFF','AUTO'].includes(cmd)){msg.statusCode=400;msg.payload={erro:'comando inválido (use ON, OFF ou AUTO)'};return msg;}\nif(!s.online) return offline();\ns.modo=cmd; global.set('campus',s);\nmsg.statusCode=200; msg.payload={ok:true,modo:cmd}; return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 160,
+    "wires": [
+      [
+        "out3"
+      ]
+    ]
+  },
+  {
+    "id": "out3",
+    "type": "http response",
+    "z": "tab1",
+    "name": "",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "in4",
+    "type": "http in",
+    "z": "tab1",
+    "name": "POST mensagem",
+    "url": "/api/v1/mensagem",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 220,
+    "wires": [
+      [
+        "fn4"
+      ]
+    ]
+  },
+  {
+    "id": "fn4",
+    "type": "function",
+    "z": "tab1",
+    "name": "Lógica POST mensagem",
+    "func": "const H={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Accept','Access-Control-Allow-Methods':'GET,POST,OPTIONS'};\nmsg.headers=H;\nconst s=global.get('campus')||{ocupada:false,ac:true,modo:'AUTO',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst offline=()=>{msg.statusCode=503;msg.payload={erro:'dispositivo offline'};return msg;};\nconst t=String((msg.payload||{}).mensagem||'').trim();\nif(!t||t.length>64){msg.statusCode=400;msg.payload={erro:'mensagem vazia ou maior que 64 caracteres'};return msg;}\nif(!s.online) return offline();\ns.oled=t; global.set('campus',s);\nmsg.statusCode=200; msg.payload={ok:true,exibindo:t}; return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 220,
+    "wires": [
+      [
+        "out4",
+        "oled"
+      ]
+    ]
+  },
+  {
+    "id": "out4",
+    "type": "http response",
+    "z": "tab1",
+    "name": "",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 220,
+    "wires": []
+  },
+  {
+    "id": "oled",
+    "type": "function",
+    "z": "tab1",
+    "name": "Log display OLED",
+    "func": "const s=global.get('campus');\nnode.warn('OLED: '+(s&&s.oled));\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 660,
+    "y": 280,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "oin0",
+    "type": "http in",
+    "z": "tab1",
+    "name": "OPTIONS (CORS)",
+    "url": "/api/v1/telemetria",
+    "method": "options",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 340,
+    "wires": [
+      [
+        "ofn0"
+      ]
+    ]
+  },
+  {
+    "id": "ofn0",
+    "type": "function",
+    "z": "tab1",
+    "name": "CORS preflight",
+    "func": "msg.headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Accept','Access-Control-Allow-Methods':'GET,POST,OPTIONS'};msg.statusCode=204;msg.payload='';return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 340,
+    "wires": [
+      [
+        "oout0"
+      ]
+    ]
+  },
+  {
+    "id": "oout0",
+    "type": "http response",
+    "z": "tab1",
+    "name": "",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 340,
+    "wires": []
+  },
+  {
+    "id": "oin1",
+    "type": "http in",
+    "z": "tab1",
+    "name": "OPTIONS (CORS)",
+    "url": "/api/v1/rooms/:room_id/ac/cut",
+    "method": "options",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 390,
+    "wires": [
+      [
+        "ofn1"
+      ]
+    ]
+  },
+  {
+    "id": "ofn1",
+    "type": "function",
+    "z": "tab1",
+    "name": "CORS preflight",
+    "func": "msg.headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Accept','Access-Control-Allow-Methods':'GET,POST,OPTIONS'};msg.statusCode=204;msg.payload='';return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 390,
+    "wires": [
+      [
+        "oout1"
+      ]
+    ]
+  },
+  {
+    "id": "oout1",
+    "type": "http response",
+    "z": "tab1",
+    "name": "",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 390,
+    "wires": []
+  },
+  {
+    "id": "oin2",
+    "type": "http in",
+    "z": "tab1",
+    "name": "OPTIONS (CORS)",
+    "url": "/api/v1/comando-carga",
+    "method": "options",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 440,
+    "wires": [
+      [
+        "ofn2"
+      ]
+    ]
+  },
+  {
+    "id": "ofn2",
+    "type": "function",
+    "z": "tab1",
+    "name": "CORS preflight",
+    "func": "msg.headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Accept','Access-Control-Allow-Methods':'GET,POST,OPTIONS'};msg.statusCode=204;msg.payload='';return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 440,
+    "wires": [
+      [
+        "oout2"
+      ]
+    ]
+  },
+  {
+    "id": "oout2",
+    "type": "http response",
+    "z": "tab1",
+    "name": "",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 440,
+    "wires": []
+  },
+  {
+    "id": "oin3",
+    "type": "http in",
+    "z": "tab1",
+    "name": "OPTIONS (CORS)",
+    "url": "/api/v1/mensagem",
+    "method": "options",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 490,
+    "wires": [
+      [
+        "ofn3"
+      ]
+    ]
+  },
+  {
+    "id": "ofn3",
+    "type": "function",
+    "z": "tab1",
+    "name": "CORS preflight",
+    "func": "msg.headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Accept','Access-Control-Allow-Methods':'GET,POST,OPTIONS'};msg.statusCode=204;msg.payload='';return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 490,
+    "wires": [
+      [
+        "oout3"
+      ]
+    ]
+  },
+  {
+    "id": "oout3",
+    "type": "http response",
+    "z": "tab1",
+    "name": "",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 490,
+    "wires": []
+  },
+  {
+    "id": "inj1",
+    "type": "inject",
+    "z": "tab1",
+    "name": "Alternar dispositivo offline (503)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 190,
+    "y": 560,
+    "wires": [
+      [
+        "tg1"
+      ]
+    ]
+  },
+  {
+    "id": "tg1",
+    "type": "function",
+    "z": "tab1",
+    "name": "Alternar online/offline",
+    "func": "const s=global.get('campus')||{ocupada:false,ac:true,modo:'AUTO',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\ns.online=!s.online; global.set('campus',s);\nnode.status({fill:s.online?'green':'red',shape:'dot',text:s.online?'dispositivo online':'dispositivo OFFLINE (503)'});\nreturn null;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 460,
+    "y": 560,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "inj2",
+    "type": "inject",
+    "z": "tab1",
+    "name": "Alternar sala ocupada/ociosa",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 190,
+    "y": 620,
+    "wires": [
+      [
+        "tg2"
+      ]
+    ]
+  },
+  {
+    "id": "tg2",
+    "type": "function",
+    "z": "tab1",
+    "name": "Alternar ocupação",
+    "func": "const s=global.get('campus')||{ocupada:false,ac:true,modo:'AUTO',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\ns.ocupada=!s.ocupada; global.set('campus',s);\nnode.status({fill:s.ocupada?'green':'grey',shape:'dot',text:s.ocupada?'sala ocupada':'sala ociosa'});\nreturn null;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 460,
+    "y": 620,
+    "wires": [
+      []
+    ]
+  }
+]

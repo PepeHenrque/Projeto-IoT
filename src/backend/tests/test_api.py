@@ -1,87 +1,87 @@
+import os
+import tempfile
+
+# Antes de importar a aplicação: banco SQLite temporário (não mexe no MySQL de ninguém) e sem conexão real ao broker.
+os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.mkdtemp(), "teste.db")
+os.environ["CAMPUS_DISABLE_MQTT"] = "1"
+
 import pytest
 from fastapi.testclient import TestClient
 
-from app import mock_db
-from app.main import app
+from app import device, mock_db
+from app.main import TOPICO_COMANDOS, TOPICO_STATUS, TOPICO_TELEMETRIA, app, handle_mqtt_message
 
 client = TestClient(app)
+client.__enter__()          # executa o lifespan (cria as tabelas e a carga inicial)
+
+FORM = {"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"}   # mesmo formato que o front envia
 
 
 @pytest.fixture(autouse=True)
 def _reset():
     mock_db.reset()
+    device.reset()
+
+
+def esp_envia(**campos):
+    """Simula o ESP32 publicando telemetria no broker."""
+    payload = {"sala_id": "SALA_101", "ocupado": True, "modo": "AUTO", "ac_ligado": True,
+               "carga_ligada": True, "potencia_w": 1100.0, "corrente_ma": 5000}
+    payload.update(campos)
+    import json
+    handle_mqtt_message(TOPICO_TELEMETRIA, json.dumps(payload).encode())
 
 
 def test_health():
     assert client.get("/health").json() == {"status": "ok"}
 
 
-def test_list_rooms():
+def test_list_rooms_somente_sala_101():
     r = client.get("/api/v1/rooms")
     assert r.status_code == 200
-    assert len(r.json()) == 8
+    assert [x["id"] for x in r.json()] == [101]
 
 
 def test_list_rooms_filters():
-    occupied = client.get("/api/v1/rooms", params={"occupied": True}).json()
-    assert occupied and all(x["occupied"] for x in occupied)
-    found = client.get("/api/v1/rooms", params={"q": "bibli"}).json()
-    assert [x["id"] for x in found] == [203]
+    assert [x["id"] for x in client.get("/api/v1/rooms", params={"q": "101"}).json()] == [101]
+    assert client.get("/api/v1/rooms", params={"q": "bibli"}).json() == []
 
 
-def test_get_room_404():
+def test_outras_salas_nao_existem():
+    assert client.get("/api/v1/rooms/102").status_code == 404
     assert client.get("/api/v1/rooms/999").status_code == 404
+    assert client.post("/api/v1/rooms/102/ac/cut").status_code == 404
+
+
+def test_sala_101_segue_a_telemetria():
+    esp_envia(ocupado=True, ac_ligado=True, carga_ligada=True)
+    sala = client.get("/api/v1/rooms/101").json()
+    assert sala["occupied"] is True and sala["ac"] is True
+    esp_envia(ocupado=False, modo="OFF", carga_ligada=False)
+    sala = client.get("/api/v1/rooms/101").json()
+    assert sala["occupied"] is False and sala["ac"] is False
 
 
 def test_energy_saving_analytics():
-    r = client.get("/api/v1/rooms/analytics/energy-saving")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["total_rooms_monitored"] == 8
-    assert body["rooms_with_ac_on"] == 6
-    assert body["idle_rooms_with_ac_on"] == 2
-    assert body["estimated_kwh_saved_today"] > 0
+    esp_envia(ocupado=False, modo="ON", ac_ligado=True, carga_ligada=True)
+    body = client.get("/api/v1/rooms/analytics/energy-saving").json()
+    assert body["total_rooms_monitored"] == 1
+    assert body["rooms_with_ac_on"] == 1
+    assert body["idle_rooms_with_ac_on"] == 1
     assert "status_rule" in body
 
 
-def test_critical_alerts_summary():
-    r = client.get("/api/v1/alerts/critical/summary")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["total_critical_alerts"] == 3
-    assert body["action_required"] is True
-    assert len(body["alerts"]) == 3
-    assert all(a["level"] == "high" for a in body["alerts"])
-
-
-def test_list_alerts_and_filter():
-    assert len(client.get("/api/v1/alerts").json()) == 7
-    high = client.get("/api/v1/alerts", params={"level": "high"}).json()
-    assert len(high) == 3 and all(a["level"] == "high" for a in high)
+def test_alerts_sem_dados_falsos():
+    assert client.get("/api/v1/alerts").json() == []
+    body = client.get("/api/v1/alerts/critical/summary").json()
+    assert body["total_critical_alerts"] == 0 and body["action_required"] is False
     assert client.get("/api/v1/alerts", params={"level": "xyz"}).status_code == 422
 
 
-def test_cut_ac_success_resolves_alert():
-    r = client.post("/api/v1/rooms/102/ac/cut")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["success"] and body["room"]["ac"] is False
-    assert body["resolved_alerts"] == 1
-    assert client.get("/api/v1/alerts", params={"room_id": 102}).json() == []
-
-
-def test_cut_ac_twice_conflict():
-    client.post("/api/v1/rooms/102/ac/cut")
-    assert client.post("/api/v1/rooms/102/ac/cut").status_code == 409
-
-
-def test_cut_ac_not_found():
-    assert client.post("/api/v1/rooms/999/ac/cut").status_code == 404
-
-
 def test_cut_ac_simulated_error():
-    assert client.post("/api/v1/rooms/102/ac/cut", params={"simulate_error": True}).status_code == 503
-    assert client.get("/api/v1/rooms/102").json()["ac"] is True
+    esp_envia()
+    assert client.post("/api/v1/rooms/101/ac/cut", params={"simulate_error": True}).status_code == 503
+    assert device.desired()["ac"] == "ON"
 
 
 def test_database_integration_routes():
@@ -100,8 +100,98 @@ def test_database_integration_routes():
     assert telemetrias[0]["ocupado"] is True
 
     # Realiza um corte de ar-condicionado e verifica registro na tabela avisos_oled
-    client.post("/api/v1/rooms/105/ac/cut")
-    avisos = client.get("/api/v1/database/avisos-oled", params={"sala_id": 105}).json()
+    esp_envia()   # a Sala 101 só aceita comando com o ESP32 online
+    assert client.post("/api/v1/rooms/101/ac/cut").status_code == 200
+    avisos = client.get("/api/v1/database/avisos-oled", params={"sala_id": 101}).json()
     assert len(avisos) >= 1
-    assert avisos[0]["sala_id"] == 105
+    assert avisos[0]["sala_id"] == 101
     assert "CORTE" in avisos[0]["mensagem"].upper()
+
+
+# ------------------------------------------------------------ integração front-end <-> ESP32
+def test_telemetria_offline_sem_esp32():
+    r = client.get("/api/v1/telemetria")
+    assert r.status_code == 503
+    assert "offline" in r.json()["erro"]
+
+
+def test_telemetria_reflete_esp32():
+    esp_envia(ocupado=False, modo="ON", potencia_w=1100.0)
+    t = client.get("/api/v1/telemetria").json()
+    assert t["ocupada"] is False
+    assert t["potencia_w"] == 1100.0
+    assert t["carga"] == {"modo": "ON", "ligada": True}
+    assert t["ac"] == {"ligado": True}
+
+
+def test_status_offline_do_lwt_derruba_telemetria():
+    esp_envia()
+    handle_mqtt_message(TOPICO_STATUS, b"offline")
+    assert client.get("/api/v1/telemetria").status_code == 503
+
+
+def test_comando_carga_formulario():
+    esp_envia()
+    r = client.post("/api/v1/comando-carga", content="comando=OFF", headers=FORM)
+    assert r.status_code == 200
+    assert r.json()["carga"] == {"modo": "OFF", "ligada": False}
+    assert device.desired()["modo_carga"] == "OFF"
+    # e dá para voltar ao AUTO (antes o ESP32 ficava preso em OFF)
+    assert client.post("/api/v1/comando-carga", json={"comando": "auto"}).json()["modo"] == "AUTO"
+
+
+def test_comando_carga_invalido_e_offline():
+    assert client.post("/api/v1/comando-carga", content="comando=XYZ", headers=FORM).status_code == 400
+    assert client.post("/api/v1/comando-carga", content="comando=ON", headers=FORM).status_code == 503
+
+
+def test_mensagem_oled():
+    esp_envia()
+    r = client.post("/api/v1/mensagem", content="mensagem=Ol%C3%A1%20turma", headers=FORM)
+    assert r.status_code == 200 and r.json()["exibindo"] == "Olá turma"
+    assert device.desired()["mensagem_web"] == "Olá turma"
+    avisos = client.get("/api/v1/database/avisos-oled", params={"sala_id": 101}).json()
+    assert avisos[0]["mensagem"] == "Olá turma"
+    assert client.post("/api/v1/mensagem", content="mensagem=" + "x" * 65, headers=FORM).status_code == 400
+    assert client.post("/api/v1/mensagem", content="mensagem=%20%20", headers=FORM).status_code == 400
+
+
+def test_ac_on_e_cut_na_sala_do_esp32():
+    esp_envia()
+    assert client.post("/api/v1/rooms/101/ac/cut", content="room_id=101", headers=FORM).status_code == 200
+    assert device.desired()["ac"] == "OFF"
+    # repetir o corte na sala do ESP32 não dá 409 (estado real vem da telemetria)
+    assert client.post("/api/v1/rooms/101/ac/cut").status_code == 200
+    r = client.post("/api/v1/rooms/101/ac/on", content="room_id=101", headers=FORM)
+    assert r.status_code == 200 and r.json()["ac"] == "ligado"
+    assert device.desired()["ac"] == "ON"
+
+
+def test_ac_da_sala_do_esp32_offline_da_503():
+    assert client.post("/api/v1/rooms/101/ac/cut").status_code == 503
+    assert client.post("/api/v1/rooms/101/ac/on").status_code == 503
+
+
+def test_comando_retido_no_broker_e_recuperado():
+    handle_mqtt_message(TOPICO_COMANDOS, b'{"modo_carga":"OFF","ac":"OFF","mensagem_web":"oi"}')
+    assert device.desired() == {"modo_carga": "OFF", "ac": "OFF", "mensagem_web": "oi"}
+
+
+def test_energia_acumulada_cresce():
+    esp_envia(potencia_w=3600.0)
+    device._state["last_seen"] -= 10   # 10 s depois...
+    esp_envia(potencia_w=3600.0)
+    assert client.get("/api/v1/telemetria").json()["energia_kwh"] > 0.009
+
+
+def test_front_end_servido_pelo_backend():
+    r = client.get("/")
+    assert r.status_code == 200 and "CampusSmart" in r.text
+    assert client.get("/js/config.js").status_code == 200
+
+
+def test_pagina_do_banco():
+    esp_envia(potencia_w=1100.0)
+    r = client.get("/banco")
+    assert r.status_code == 200
+    assert "Tabela telemetrias" in r.text and "Sala 101" in r.text and "1100.0" in r.text

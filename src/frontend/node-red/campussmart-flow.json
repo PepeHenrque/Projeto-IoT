@@ -1,0 +1,464 @@
+[
+  {
+    "id": "cs_tab",
+    "type": "tab",
+    "label": "CampusSmart API v2",
+    "disabled": false,
+    "info": "Endpoints da Sala 101 (sensores/atuadores simulados) com CORS centralizado.\n\nOrigens permitidas: variável de ambiente CORS_ORIGINS desta aba (Propriedades do fluxo > Variáveis de ambiente).\n\nMODO DA CARGA (POST /api/v1/comando-carga): ON = carga energizada | OFF = carga cortada | AUTO = energizada somente com a sala ocupada.\nA telemetria devolve carga:{modo, ligada}: 'ligada' é o estado EFETIVO e a potência (potencia_w) cai quando a carga está cortada.\nPara testar o AUTO use o inject 'Alternar sala ocupada/ociosa'.",
+    "env": [
+      {
+        "name": "CORS_ORIGINS",
+        "value": "http://127.0.0.1:5500,http://localhost:5500",
+        "type": "str"
+      }
+    ]
+  },
+  {
+    "id": "cs_in_tel",
+    "type": "http in",
+    "z": "cs_tab",
+    "name": "GET telemetria",
+    "url": "/api/v1/telemetria",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 60,
+    "wires": [
+      [
+        "cs_fn_tel"
+      ]
+    ]
+  },
+  {
+    "id": "cs_fn_tel",
+    "type": "function",
+    "z": "cs_tab",
+    "name": "Lógica GET telemetria",
+    "func": "const DEF={ocupada:false,ac:true,luz:true,modo:'ON',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst s=global.get('campus')||DEF;\nif(s.luz===undefined) s.luz=true;\n// Carga controlada da Sala 101: ON = energizada | OFF = cortada | AUTO = energizada somente com a sala ocupada.\nconst cargaLigada=x=>x.modo==='ON'||(x.modo==='AUTO'&&x.ocupada===true);\nconst now=Date.now();\nif(!s.online){ s.ts=now; global.set('campus',s); msg.statusCode=503; msg.payload={erro:'dispositivo offline'}; return msg; }\n// Consumo acumulado = soma de (potência x tempo). O intervalo é limitado a 60 s para que um período sem leituras\n// (aba fechada, Node-RED parado) não vire um salto de energia de uma vez só.\nconst dt=Math.min(Math.max(now-(s.ts||now),0),60000)/3600000;\nconst lig=cargaLigada(s);\n// Potência: 200 W fixos (sensores e display) + equipamentos SOMENTE quando a carga está energizada.\nconst base=200+(lig?(s.ac?1100:0)+(s.luz?100:0)+150:0);\ns.potencia=Math.round(base+(Math.random()-0.5)*80);\ns.energia=+(s.energia+s.potencia/1000*dt).toFixed(4);\ns.ts=now; global.set('campus',s);\nmsg.statusCode=200;\nmsg.payload={sala:101,timestamp:new Date(now).toISOString(),ocupada:s.ocupada,\n temperatura:+(s.ac&&lig?23+Math.random():27+Math.random()).toFixed(1),umidade:Math.round(55+Math.random()*4),\n potencia_w:s.potencia,energia_kwh:s.energia,ac:{ligado:s.ac},iluminacao:{ligada:s.luz},carga:{modo:s.modo,ligada:lig}};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 60,
+    "wires": [
+      [
+        "cs_cors"
+      ]
+    ]
+  },
+  {
+    "id": "cs_in_ac",
+    "type": "http in",
+    "z": "cs_tab",
+    "name": "POST ac/cut",
+    "url": "/api/v1/rooms/:room_id/ac/cut",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 120,
+    "wires": [
+      [
+        "cs_fn_ac"
+      ]
+    ]
+  },
+  {
+    "id": "cs_fn_ac",
+    "type": "function",
+    "z": "cs_tab",
+    "name": "Lógica POST ac/cut",
+    "func": "const DEF={ocupada:false,ac:true,luz:true,modo:'ON',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst s=global.get('campus')||DEF;\nif(s.luz===undefined) s.luz=true;\n// Carga controlada da Sala 101: ON = energizada | OFF = cortada | AUTO = energizada somente com a sala ocupada.\nconst cargaLigada=x=>x.modo==='ON'||(x.modo==='AUTO'&&x.ocupada===true);\nconst offline=()=>{msg.statusCode=503;msg.payload={erro:'dispositivo offline'};return msg;};\nif(String(msg.req.params.room_id)!=='101'){msg.statusCode=404;msg.payload={erro:'sala não encontrada'};return msg;}\nif(!s.online) return offline();\ns.ac=false; global.set('campus',s);\nmsg.statusCode=200; msg.payload={ok:true,room_id:101,ac:'cortado'}; return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 120,
+    "wires": [
+      [
+        "cs_cors"
+      ]
+    ]
+  },
+  {
+    "id": "cs_in_acon",
+    "type": "http in",
+    "z": "cs_tab",
+    "name": "POST ac/on",
+    "url": "/api/v1/rooms/:room_id/ac/on",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 150,
+    "wires": [
+      [
+        "cs_fn_acon"
+      ]
+    ]
+  },
+  {
+    "id": "cs_fn_acon",
+    "type": "function",
+    "z": "cs_tab",
+    "name": "Lógica POST ac/on",
+    "func": "const DEF={ocupada:false,ac:true,luz:true,modo:'ON',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst s=global.get('campus')||DEF;\nif(s.luz===undefined) s.luz=true;\n// Carga controlada da Sala 101: ON = energizada | OFF = cortada | AUTO = energizada somente com a sala ocupada.\nconst cargaLigada=x=>x.modo==='ON'||(x.modo==='AUTO'&&x.ocupada===true);\nconst offline=()=>{msg.statusCode=503;msg.payload={erro:'dispositivo offline'};return msg;};\nif(String(msg.req.params.room_id)!=='101'){msg.statusCode=404;msg.payload={erro:'sala não encontrada'};return msg;}\nif(!s.online) return offline();\ns.ac=true; global.set('campus',s);\nmsg.statusCode=200; msg.payload={ok:true,room_id:101,ac:'ligado'}; return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 150,
+    "wires": [
+      [
+        "cs_cors"
+      ]
+    ]
+  },
+  {
+    "id": "cs_in_luzon",
+    "type": "http in",
+    "z": "cs_tab",
+    "name": "POST light/on",
+    "url": "/api/v1/rooms/:room_id/light/on",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 180,
+    "wires": [
+      [
+        "cs_fn_luzon"
+      ]
+    ]
+  },
+  {
+    "id": "cs_fn_luzon",
+    "type": "function",
+    "z": "cs_tab",
+    "name": "Lógica POST light/on",
+    "func": "const DEF={ocupada:false,ac:true,luz:true,modo:'ON',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst s=global.get('campus')||DEF;\nif(s.luz===undefined) s.luz=true;\n// Carga controlada da Sala 101: ON = energizada | OFF = cortada | AUTO = energizada somente com a sala ocupada.\nconst cargaLigada=x=>x.modo==='ON'||(x.modo==='AUTO'&&x.ocupada===true);\nconst offline=()=>{msg.statusCode=503;msg.payload={erro:'dispositivo offline'};return msg;};\nif(String(msg.req.params.room_id)!=='101'){msg.statusCode=404;msg.payload={erro:'sala não encontrada'};return msg;}\nif(!s.online) return offline();\ns.luz=true; global.set('campus',s);\nmsg.statusCode=200; msg.payload={ok:true,room_id:101,iluminacao:'ligada'}; return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 180,
+    "wires": [
+      [
+        "cs_cors"
+      ]
+    ]
+  },
+  {
+    "id": "cs_in_luzoff",
+    "type": "http in",
+    "z": "cs_tab",
+    "name": "POST light/off",
+    "url": "/api/v1/rooms/:room_id/light/off",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 210,
+    "wires": [
+      [
+        "cs_fn_luzoff"
+      ]
+    ]
+  },
+  {
+    "id": "cs_fn_luzoff",
+    "type": "function",
+    "z": "cs_tab",
+    "name": "Lógica POST light/off",
+    "func": "const DEF={ocupada:false,ac:true,luz:true,modo:'ON',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst s=global.get('campus')||DEF;\nif(s.luz===undefined) s.luz=true;\n// Carga controlada da Sala 101: ON = energizada | OFF = cortada | AUTO = energizada somente com a sala ocupada.\nconst cargaLigada=x=>x.modo==='ON'||(x.modo==='AUTO'&&x.ocupada===true);\nconst offline=()=>{msg.statusCode=503;msg.payload={erro:'dispositivo offline'};return msg;};\nif(String(msg.req.params.room_id)!=='101'){msg.statusCode=404;msg.payload={erro:'sala não encontrada'};return msg;}\nif(!s.online) return offline();\ns.luz=false; global.set('campus',s);\nmsg.statusCode=200; msg.payload={ok:true,room_id:101,iluminacao:'desligada'}; return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 210,
+    "wires": [
+      [
+        "cs_cors"
+      ]
+    ]
+  },
+  {
+    "id": "cs_in_carga",
+    "type": "http in",
+    "z": "cs_tab",
+    "name": "POST comando-carga",
+    "url": "/api/v1/comando-carga",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 240,
+    "wires": [
+      [
+        "cs_fn_carga"
+      ]
+    ]
+  },
+  {
+    "id": "cs_fn_carga",
+    "type": "function",
+    "z": "cs_tab",
+    "name": "Lógica POST comando-carga",
+    "func": "const DEF={ocupada:false,ac:true,luz:true,modo:'ON',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst s=global.get('campus')||DEF;\nif(s.luz===undefined) s.luz=true;\n// Carga controlada da Sala 101: ON = energizada | OFF = cortada | AUTO = energizada somente com a sala ocupada.\nconst cargaLigada=x=>x.modo==='ON'||(x.modo==='AUTO'&&x.ocupada===true);\nconst offline=()=>{msg.statusCode=503;msg.payload={erro:'dispositivo offline'};return msg;};\nfunction lerCorpo(){ // aceita objeto (JSON), texto ou Buffer (text/plain, sem preflight)\n  let b=msg.payload; if(b===undefined||b===null||b==='') b=msg.req&&msg.req.body;\n  if(Buffer.isBuffer(b)) b=b.toString('utf8');\n  if(typeof b==='string'){ try{ b=JSON.parse(b); }catch(e){ return null; } }\n  return (b&&typeof b==='object')?b:null;\n}\nconst b=lerCorpo(); const cmd=String((b&&b.comando)||'').toUpperCase();\nif(!['ON','OFF','AUTO'].includes(cmd)){msg.statusCode=400;msg.payload={erro:'comando inválido (use ON, OFF ou AUTO)'};return msg;}\nif(!s.online) return offline();\ns.modo=cmd; global.set('campus',s);\nmsg.statusCode=200; msg.payload={ok:true,modo:cmd,carga:{modo:cmd,ligada:cargaLigada(s)}}; return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 240,
+    "wires": [
+      [
+        "cs_cors"
+      ]
+    ]
+  },
+  {
+    "id": "cs_in_msg",
+    "type": "http in",
+    "z": "cs_tab",
+    "name": "POST mensagem",
+    "url": "/api/v1/mensagem",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 300,
+    "wires": [
+      [
+        "cs_fn_msg"
+      ]
+    ]
+  },
+  {
+    "id": "cs_fn_msg",
+    "type": "function",
+    "z": "cs_tab",
+    "name": "Lógica POST mensagem",
+    "func": "const DEF={ocupada:false,ac:true,luz:true,modo:'ON',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst s=global.get('campus')||DEF;\nif(s.luz===undefined) s.luz=true;\n// Carga controlada da Sala 101: ON = energizada | OFF = cortada | AUTO = energizada somente com a sala ocupada.\nconst cargaLigada=x=>x.modo==='ON'||(x.modo==='AUTO'&&x.ocupada===true);\nconst offline=()=>{msg.statusCode=503;msg.payload={erro:'dispositivo offline'};return msg;};\nfunction lerCorpo(){ // aceita objeto (JSON), texto ou Buffer (text/plain, sem preflight)\n  let b=msg.payload; if(b===undefined||b===null||b==='') b=msg.req&&msg.req.body;\n  if(Buffer.isBuffer(b)) b=b.toString('utf8');\n  if(typeof b==='string'){ try{ b=JSON.parse(b); }catch(e){ return null; } }\n  return (b&&typeof b==='object')?b:null;\n}\nconst b=lerCorpo(); const t=String((b&&b.mensagem)||'').trim();\nif(!t||t.length>64){msg.statusCode=400;msg.payload={erro:'mensagem vazia ou maior que 64 caracteres'};return msg;}\nif(!s.online) return offline();\ns.oled=t; global.set('campus',s);\nmsg.statusCode=200; msg.payload={ok:true,exibindo:t}; return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 300,
+    "wires": [
+      [
+        "cs_cors",
+        "cs_oled"
+      ]
+    ]
+  },
+  {
+    "id": "cs_oled",
+    "type": "function",
+    "z": "cs_tab",
+    "name": "Log do display OLED",
+    "func": "const s=global.get('campus'); node.warn('OLED: '+(s&&s.oled)); return null;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 650,
+    "y": 350,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "cs_cors",
+    "type": "function",
+    "z": "cs_tab",
+    "name": "CORS (todas as respostas)",
+    "func": "// ÚNICO ponto de CORS: toda resposta (200, 400, 404, 503, 500) passa por aqui antes do http response.\nconst lista=String(env.get('CORS_ORIGINS')||'http://127.0.0.1:5500,http://localhost:5500').split(',').map(x=>x.trim()).filter(Boolean);\nconst origem=(msg.req&&msg.req.headers&&msg.req.headers.origin)||'';\nconst h=Object.assign({},msg.headers);\nh['Access-Control-Allow-Methods']='GET,POST,OPTIONS';\nh['Access-Control-Allow-Headers']='Content-Type, Accept';\nh['Access-Control-Max-Age']='600';\nh['Vary']='Origin';\nif(lista.includes('*')) h['Access-Control-Allow-Origin']='*';\nelse if(origem && lista.includes(origem)) h['Access-Control-Allow-Origin']=origem;\nmsg.headers=h;\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 700,
+    "y": 150,
+    "wires": [
+      [
+        "cs_resp"
+      ]
+    ]
+  },
+  {
+    "id": "cs_resp",
+    "type": "http response",
+    "z": "cs_tab",
+    "name": "Resposta HTTP",
+    "statusCode": "",
+    "headers": {},
+    "x": 950,
+    "y": 150,
+    "wires": []
+  },
+  {
+    "id": "cs_catch",
+    "type": "catch",
+    "z": "cs_tab",
+    "name": "Erro nas lógicas",
+    "scope": [
+      "cs_fn_tel",
+      "cs_fn_ac",
+      "cs_fn_acon",
+      "cs_fn_luzon",
+      "cs_fn_luzoff",
+      "cs_fn_carga",
+      "cs_fn_msg"
+    ],
+    "uncaught": false,
+    "x": 150,
+    "y": 340,
+    "wires": [
+      [
+        "cs_err"
+      ]
+    ]
+  },
+  {
+    "id": "cs_err",
+    "type": "function",
+    "z": "cs_tab",
+    "name": "Resposta 500",
+    "func": "msg.statusCode=500; msg.payload={erro:'erro interno no fluxo'}; return msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 340,
+    "wires": [
+      [
+        "cs_cors"
+      ]
+    ]
+  },
+  {
+    "id": "cs_note",
+    "type": "comment",
+    "z": "cs_tab",
+    "name": "Por que não há nós OPTIONS",
+    "info": "O nó 'http in' só aceita GET, POST, PUT, DELETE e PATCH. Um nó configurado como OPTIONS não é registrado, e o Express responde o preflight sozinho (200 OK sem CORS).\n\nO front-end envia POST como 'text/plain' (requisição simples, sem preflight). Para usar JSON com preflight, habilite httpNodeCors no settings.js (veja o README).",
+    "x": 190,
+    "y": 400,
+    "wires": []
+  },
+  {
+    "id": "cs_inj_off",
+    "type": "inject",
+    "z": "cs_tab",
+    "name": "Alternar dispositivo offline (503)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 190,
+    "y": 470,
+    "wires": [
+      [
+        "cs_t_off"
+      ]
+    ]
+  },
+  {
+    "id": "cs_t_off",
+    "type": "function",
+    "z": "cs_tab",
+    "name": "Alternar online/offline",
+    "func": "const DEF={ocupada:false,ac:true,luz:true,modo:'ON',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst s=global.get('campus')||DEF;\nif(s.luz===undefined) s.luz=true;\ns.online=!s.online; global.set('campus',s);\nnode.status({fill:s.online?'green':'red',shape:'dot',text:s.online?'dispositivo online':'dispositivo OFFLINE (503)'});\nreturn null;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 470,
+    "y": 470,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "cs_inj_occ",
+    "type": "inject",
+    "z": "cs_tab",
+    "name": "Alternar sala ocupada/ociosa",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 190,
+    "y": 520,
+    "wires": [
+      [
+        "cs_t_occ"
+      ]
+    ]
+  },
+  {
+    "id": "cs_t_occ",
+    "type": "function",
+    "z": "cs_tab",
+    "name": "Alternar ocupação",
+    "func": "const DEF={ocupada:false,ac:true,luz:true,modo:'ON',potencia:1450,energia:12.34,online:true,ts:Date.now(),oled:''};\nconst s=global.get('campus')||DEF;\nif(s.luz===undefined) s.luz=true;\ns.ocupada=!s.ocupada; global.set('campus',s);\nnode.status({fill:s.ocupada?'green':'grey',shape:'dot',text:s.ocupada?'sala ocupada':'sala ociosa'});\nreturn null;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 470,
+    "y": 520,
+    "wires": [
+      []
+    ]
+  }
+]

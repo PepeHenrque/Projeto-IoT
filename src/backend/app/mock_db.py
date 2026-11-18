@@ -30,35 +30,15 @@ def _d(name: str, status: str, on: bool) -> dict:
     return {"name": name, "status": status, "on": on}
 
 
+# Única sala monitorada: a Sala 101, onde está o ESP32. O único equipamento controlado é o
+# ar-condicionado (ventoinha). Ocupação e estado do AC são atualizados pela telemetria MQTT.
 _SEED_ROOMS = [
-    {"id": 101, "name": "Sala 101", "floor": "1º andar", "occupied": True, "lights": True, "last": "há 10min",
-     "devices": [_d("Iluminação", "Ligada", True), _d("Ar-condicionado", "Ligado", True), _d("Projetor", "Desligado", False)]},
-    {"id": 102, "name": "Sala 102", "floor": "1º andar", "occupied": False, "lights": True, "last": "há 45min",
-     "devices": [_d("Iluminação", "Ligada", True), _d("Ar-condicionado", "Ligado", True), _d("Projetor", "Desligado", False)]},
-    {"id": 103, "name": "Sala 103", "floor": "1º andar", "occupied": True, "lights": True, "last": "em uso",
-     "devices": [_d("Iluminação", "Ligada", True), _d("Ar-condicionado", "Ligado", True)]},
-    {"id": 104, "name": "Lab. Informática", "floor": "1º andar", "occupied": False, "lights": True, "last": "há 2h 15min",
-     "devices": [_d("Iluminação", "Ligada", True), _d("Climatização", "Desligado", False), _d("Computadores (8)", "Ligados", True),
-                 _d("Projetor", "Desligado", False), _d("Impressora", "Ligada", True), _d("Switch de rede", "Ligado", True)]},
-    {"id": 105, "name": "Auditório", "floor": "Térreo", "occupied": False, "lights": False, "last": "há 1h 40min",
-     "devices": [_d("Iluminação", "Desligada", False), _d("Ar-condicionado", "Ligado", True), _d("Palco", "Ligado", True)]},
-    {"id": 201, "name": "Sala 201", "floor": "2º andar", "occupied": True, "lights": True, "last": "em uso",
-     "devices": [_d("Iluminação", "Ligada", True), _d("Ar-condicionado", "Ligado", True)]},
-    {"id": 202, "name": "Sala 202", "floor": "2º andar", "occupied": False, "lights": False, "last": "há 3h",
-     "devices": [_d("Iluminação", "Desligada", False), _d("Ar-condicionado", "Desligado", False)]},
-    {"id": 203, "name": "Biblioteca", "floor": "Térreo", "occupied": True, "lights": True, "last": "em uso",
-     "devices": [_d("Iluminação", "Ligada", True), _d("Ar-condicionado", "Ligado", True), _d("Computadores", "Ligados", True)]},
+    {"id": 101, "name": "Sala 101", "floor": "1º andar", "occupied": False, "lights": False, "last": "aguardando ESP32",
+     "devices": [_d("Ar-condicionado", "Desligado", False)]},
 ]
 
-_SEED_ALERTS = [
-    {"id": 1, "room_id": 102, "equip": "Ar-condicionado", "title": "Sala ociosa com AC ligado", "priority": "Alta", "level": "high", "time": "há 45min"},
-    {"id": 2, "room_id": 104, "equip": "Computadores (8)", "title": "Equipamentos ligados sem uso", "priority": "Alta", "level": "high", "time": "há 2h 15min"},
-    {"id": 3, "room_id": 105, "equip": "Ar-condicionado", "title": "Sala ociosa com AC ligado", "priority": "Alta", "level": "high", "time": "há 1h 40min"},
-    {"id": 4, "room_id": 104, "equip": "Iluminação", "title": "Sala ociosa com luz acesa", "priority": "Média", "level": "medium", "time": "há 2h 15min"},
-    {"id": 5, "room_id": 105, "equip": "Iluminação", "title": "Iluminação sem evento ativo", "priority": "Média", "level": "medium", "time": "há 3h"},
-    {"id": 6, "room_id": 203, "equip": "Computadores", "title": "Consumo acima do padrão", "priority": "Baixa", "level": "low", "time": "há 30min"},
-    {"id": 7, "room_id": 101, "equip": "Iluminação", "title": "Consumo elevado", "priority": "Baixa", "level": "low", "time": "há 20min"},
-]
+# Alertas reais são calculados pelo front-end a partir da telemetria (sala vazia + AC ligado).
+_SEED_ALERTS: list[dict] = []
 
 _lock = threading.Lock()
 _rooms: dict[int, dict] = {}
@@ -138,12 +118,18 @@ def update_room_telemetry(
     occupied: bool | None = None,
     potencia_w: float = 0.0,
     corrente_ma: int = 0,
+    ac_on: bool | None = None,
 ) -> None:
     with _lock:
         room = _rooms.get(room_id)
         if room and occupied is not None:
             room["occupied"] = bool(occupied)
             room["last"] = "em uso" if occupied else "há pouco"
+        if room and ac_on is not None:
+            ac = _find_ac(room)
+            if ac is not None:
+                ac["on"] = bool(ac_on)
+                ac["status"] = "Ligado" if ac_on else "Desligado"
 
     # Persistência nas tabelas relacionais salas e telemetrias
     session = SessionLocal()
@@ -177,13 +163,13 @@ def update_room_telemetry(
         session.close()
 
 
-def record_aviso_oled(room_id: int, mensagem: str) -> None:
+def record_aviso_oled(room_id: int, mensagem: str, modo_operacao: str | None = None) -> None:
+    """Grava a mensagem enviada ao display OLED e, se informado, o novo modo de operação da sala."""
     session = SessionLocal()
     try:
         sala_db = session.query(SalaDB).filter(SalaDB.id == room_id).first()
-        if sala_db:
-            if "CORTE" in mensagem.upper() or "DESLIG" in mensagem.upper():
-                sala_db.modo_operacao = "OFF"
+        if sala_db and modo_operacao in ("AUTO", "ON", "OFF"):
+            sala_db.modo_operacao = modo_operacao
         aviso = AvisoOledDB(
             sala_id=room_id,
             mensagem=mensagem,
@@ -246,8 +232,8 @@ def list_avisos_oled(sala_id: int | None = None, limit: int = 50) -> list[dict]:
         session.close()
 
 
-# ---------- comando de corte ----------
-def cut_ac(room_id: int) -> tuple[Room, str, int, datetime]:
+# ---------- comandos do ar-condicionado ----------
+def cut_ac(room_id: int, allow_already_off: bool = False) -> tuple[Room, str, int, datetime]:
     with _lock:
         room = _rooms.get(room_id)
         if room is None:
@@ -255,7 +241,7 @@ def cut_ac(room_id: int) -> tuple[Room, str, int, datetime]:
         ac = _find_ac(room)
         if ac is None:
             raise NoAcInRoom(room_id)
-        if not ac["on"]:
+        if not ac["on"] and not allow_already_off:
             raise AcAlreadyOff(room_id)
 
         ac["on"] = False
@@ -269,3 +255,17 @@ def cut_ac(room_id: int) -> tuple[Room, str, int, datetime]:
     record_aviso_oled(room_id, f"CORTE: {ac['name']} desligado")
 
     return _to_room(room), ac["name"], resolved, datetime.now(timezone.utc)
+
+
+def turn_on_ac(room_id: int) -> tuple[Room, str, datetime]:
+    with _lock:
+        room = _rooms.get(room_id)
+        if room is None:
+            raise RoomNotFound(room_id)
+        ac = _find_ac(room)
+        if ac is None:
+            raise NoAcInRoom(room_id)
+        ac["on"] = True
+        ac["status"] = "Ligado"
+    record_aviso_oled(room_id, f"LIGADO: {ac['name']}")
+    return _to_room(room), ac["name"], datetime.now(timezone.utc)
